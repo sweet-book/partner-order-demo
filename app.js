@@ -62,6 +62,20 @@ function applyConfig() {
     if (document.getElementById('apiKeyInput').value.trim()) {
         initClient();
     }
+
+    // Tab 자동완성: 빈 입력란에서 Tab 누르면 placeholder 값으로 채움
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Tab' && !e.shiftKey) {
+            const el = e.target;
+            if (el.tagName === 'INPUT' && el.type === 'text' && !el.value.trim() && el.placeholder) {
+                e.preventDefault();
+                el.value = el.placeholder;
+                const inputs = Array.from(document.querySelectorAll('input[type="text"]:not([style*="display:none"])'));
+                const idx = inputs.indexOf(el);
+                if (idx >= 0 && idx < inputs.length - 1) inputs[idx + 1].focus();
+            }
+        }
+    });
 }
 
 function getBaseUrl() {

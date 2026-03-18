@@ -719,22 +719,55 @@ async function cancelOrder(orderUid) {
 // 배송지 변경
 // ============================================================
 
-async function editShipping(orderUid) {
-    const name = prompt('수령인 (변경 없으면 비워두세요):');
-    const phone = prompt('전화번호 (변경 없으면 비워두세요):');
-    const postal = prompt('우편번호 (변경 없으면 비워두세요):');
-    const addr1 = prompt('주소1 (변경 없으면 비워두세요):');
-    const addr2 = prompt('주소2 (변경 없으면 비워두세요):');
+let _shippingEditOrderUid = null;
 
-    const update = {};
-    if (name) update.recipientName = name;
-    if (phone) update.recipientPhone = phone;
-    if (postal) update.postalCode = postal;
-    if (addr1) update.address1 = addr1;
-    if (addr2) update.address2 = addr2;
+async function editShipping(orderUid) {
+    _shippingEditOrderUid = orderUid;
+
+    // 현재 주문 상세에서 배송지 데이터 가져오기
+    try {
+        const data = await client.orders.get(orderUid);
+        const el = document.getElementById('orderDetailContent');
+        el.innerHTML += `
+            <div class="detail-section" id="shippingEditForm" style="margin-top:16px; padding:16px; border:2px solid #667eea; border-radius:8px; background:#f8f9ff;">
+                <h3>배송지 변경</h3>
+                <div class="form-grid">
+                    <div class="form-group"><label>수령인</label><input type="text" id="editShipName" value="${escHtml(data.recipientName ?? data.RecipientName ?? '')}" /></div>
+                    <div class="form-group"><label>전화번호</label><input type="text" id="editShipPhone" value="${escHtml(data.recipientPhone ?? data.RecipientPhone ?? '')}" /></div>
+                    <div class="form-group"><label>우편번호</label><input type="text" id="editShipPostal" value="${escHtml(data.postalCode ?? data.PostalCode ?? '')}" /></div>
+                    <div class="form-group"><label>주소1</label><input type="text" id="editShipAddr1" value="${escHtml(data.address1 ?? data.Address1 ?? '')}" /></div>
+                    <div class="form-group"><label>주소2</label><input type="text" id="editShipAddr2" value="${escHtml(data.address2 ?? data.Address2 ?? '')}" /></div>
+                    <div class="form-group"><label>배송메모</label><input type="text" id="editShipMemo" value="${escHtml(data.shippingMemo ?? data.ShippingMemo ?? '')}" /></div>
+                </div>
+                <div style="margin-top:12px; display:flex; gap:8px;">
+                    <button class="btn btn-primary btn-sm" onclick="saveShippingEdit()">저장</button>
+                    <button class="btn btn-outline btn-sm" onclick="document.getElementById('shippingEditForm').remove()">취소</button>
+                </div>
+            </div>`;
+        document.getElementById('editShipName').focus();
+    } catch (e) {
+        log(`배송지 조회 실패: ${e.message}`, 'error');
+    }
+}
+
+async function saveShippingEdit() {
+    const orderUid = _shippingEditOrderUid;
+    if (!orderUid) return;
+
+    const update = {
+        recipientName: document.getElementById('editShipName').value.trim(),
+        recipientPhone: document.getElementById('editShipPhone').value.trim(),
+        postalCode: document.getElementById('editShipPostal').value.trim(),
+        address1: document.getElementById('editShipAddr1').value.trim(),
+        address2: document.getElementById('editShipAddr2').value.trim(),
+        shippingMemo: document.getElementById('editShipMemo').value.trim(),
+    };
+
+    // 빈 값 제거
+    Object.keys(update).forEach(k => { if (!update[k]) delete update[k]; });
 
     if (!Object.keys(update).length) {
-        log('변경할 내용이 없습니다.', 'warn');
+        alert('변경할 내용이 없습니다.');
         return;
     }
 
@@ -742,10 +775,11 @@ async function editShipping(orderUid) {
         log(`배송지 변경 중: ${orderUid}`, 'info');
         await client.orders.updateShipping(orderUid, update);
         log(`배송지 변경 완료: ${orderUid}`, 'success');
-        closeModal();
+        alert('배송지가 변경되었습니다.');
         showOrderDetail(orderUid);
     } catch (e) {
         log(`배송지 변경 실패: ${e.message}`, 'error');
+        alert(`배송지 변경 실패: ${e.message}`);
     }
 }
 

@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>파트너 주문</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- ── 헤더 ── -->
+<div class="header">
+    <div>
+        <h1>파트너 주문</h1>
+        <span class="text-muted">Sweetbook Partner Order System</span>
+    </div>
+    <div class="header-right">
+        <span id="creditBadge" class="credit-badge hidden">잔액: -</span>
+        <button id="btnRefreshCredit" class="btn btn-outline btn-sm" onclick="refreshCredit()">잔액 조회</button>
+    </div>
+</div>
+
+<!-- ── 설정 바 ── -->
+<div class="config-bar">
+    <div class="env-selector">
+        <label><input type="radio" name="apiEnv" value="sandbox" checked /> 샌드박스</label>
+        <label><input type="radio" name="apiEnv" value="live" /> 운영</label>
+    </div>
+    <input type="password" id="apiKeyInput" placeholder="API Key"
+        onfocus="this.type='text'" onblur="this.type='password'" />
+    <button class="btn btn-primary btn-sm" onclick="initClient()">연결</button>
+    <span id="connStatus" class="text-muted"></span>
+    <span id="envWarning" class="env-warning" style="display:none;">운영 환경입니다. 실제 충전금이 차감되고 실제 주문이 생성됩니다.</span>
+</div>
+
+<!-- ── 탭 ── -->
+<div class="tabs">
+    <button class="tab-btn active" data-tab="tab-order">주문하기</button>
+    <button class="tab-btn" data-tab="tab-orders">주문 내역</button>
+    <button class="tab-btn" data-tab="tab-credits">충전금</button>
+    <button class="tab-btn" data-tab="tab-log">로그</button>
+</div>
+
+<!-- ══════════════════════════════════════ -->
+<!-- 탭 1: 주문하기 -->
+<!-- ══════════════════════════════════════ -->
+<div id="tab-order" class="tab-panel active">
+
+    <!-- 책 선택 -->
+    <div class="card">
+        <div class="action-bar">
+            <h2>1. 책 선택</h2>
+            <div>
+                <input type="text" id="bookUidDirect" placeholder="bookUid 직접 입력" style="padding:6px 10px;border:1px solid #ddd;border-radius:6px;font-size:0.85rem;width:200px;" />
+                <button class="btn btn-outline btn-sm" onclick="addBookDirect()">추가</button>
+                <button class="btn btn-primary btn-sm" onclick="loadBooks()">내 책 불러오기</button>
+            </div>
+        </div>
+        <div id="bookList">
+            <div class="empty-state">연결 후 '내 책 불러오기'를 클릭하거나 bookUid를 직접 입력하세요.</div>
+        </div>
+    </div>
+
+    <!-- 배송지 -->
+    <div class="card">
+        <h2>2. 배송지 정보</h2>
+        <div class="form-grid">
+            <div class="form-group">
+                <label>수령인*</label>
+                <input type="text" id="shipName" placeholder="홍길동" />
+            </div>
+            <div class="form-group">
+                <label>전화번호*</label>
+                <input type="text" id="shipPhone" placeholder="010-1234-5678" />
+            </div>
+            <div class="form-group">
+                <label>우편번호*</label>
+                <input type="text" id="shipPostal" placeholder="06234" />
+            </div>
+            <div class="form-group">
+                <label>주소1*</label>
+                <input type="text" id="shipAddr1" placeholder="서울시 강남구..." />
+            </div>
+            <div class="form-group">
+                <label>주소2</label>
+                <input type="text" id="shipAddr2" placeholder="101호" />
+            </div>
+            <div class="form-group">
+                <label>배송 메모</label>
+                <input type="text" id="shipMemo" placeholder="부재 시 경비실" />
+            </div>
+            <div class="form-group">
+                <label>외부 참조 (externalRef)</label>
+                <input type="text" id="externalRef" placeholder="파트너 주문번호 (선택, 최대100자)" />
+            </div>
+        </div>
+    </div>
+
+    <!-- 견적 & 주문 -->
+    <div class="card">
+        <h2>3. 견적 / 주문</h2>
+        <div class="flex-end">
+            <button class="btn btn-outline" onclick="doEstimate()">견적 조회</button>
+            <button id="btnOrder" class="btn btn-primary" onclick="doOrder()">주문하기</button>
+        </div>
+        <div id="estimateResult" class="hidden"></div>
+    </div>
+</div>
+
+<!-- ══════════════════════════════════════ -->
+<!-- 탭 2: 주문 내역 -->
+<!-- ══════════════════════════════════════ -->
+<div id="tab-orders" class="tab-panel">
+    <div class="card">
+        <div class="action-bar">
+            <h2>주문 내역</h2>
+            <div>
+                <select id="orderStatusFilter" style="padding:6px;border:1px solid #ddd;border-radius:6px;font-size:0.85rem;">
+                    <option value="">전체 상태</option>
+                    <option value="20">PAID (결제완료)</option>
+                    <option value="25">PDF_READY</option>
+                    <option value="30">CONFIRMED (제작확정)</option>
+                    <option value="40">IN_PRODUCTION (제작중)</option>
+                    <option value="50">PRODUCTION_COMPLETE</option>
+                    <option value="60">SHIPPED (발송)</option>
+                    <option value="70">DELIVERED (배송완료)</option>
+                    <option value="80">CANCELLED</option>
+                    <option value="81">CANCELLED_REFUND</option>
+                </select>
+                <button class="btn btn-primary btn-sm" onclick="loadOrders()">조회</button>
+            </div>
+        </div>
+        <div id="orderTableWrap">
+            <div class="empty-state">연결 후 '조회'를 클릭하세요.</div>
+        </div>
+        <div id="orderPagination" class="flex-end mt-8"></div>
+    </div>
+</div>
+
+<!-- ══════════════════════════════════════ -->
+<!-- 탭 3: 충전금 -->
+<!-- ══════════════════════════════════════ -->
+<div id="tab-credits" class="tab-panel">
+    <div class="card">
+        <div class="action-bar">
+            <h2>충전금 거래 내역</h2>
+            <button class="btn btn-primary btn-sm" onclick="loadCreditTx()">조회</button>
+        </div>
+        <div id="creditInfo" class="mb-12"></div>
+
+        <!-- sandbox 충전 (test 모드에서만 표시) -->
+        <div id="sandboxChargeSection" class="card hidden" style="background:#f0fdf4;border-color:#bbf7d0;">
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+                <h3>Sandbox 충전</h3>
+                <span id="chargeBalanceResult" style="font-weight:600;font-size:0.95rem;"></span>
+            </div>
+            <div style="display:flex;gap:8px;align-items:center;margin-top:8px;">
+                <input type="number" id="chargeAmount" min="1000" step="1000" value="100000" placeholder="충전 금액" style="padding:6px 10px;border:1px solid #ddd;border-radius:6px;width:150px;font-size:0.9rem;" />
+                <span class="text-muted">원</span>
+                <button class="btn btn-primary btn-sm" onclick="doSandboxCharge()">충전</button>
+            </div>
+        </div>
+
+        <!-- live 안내 (live 모드에서만 표시) -->
+        <div id="liveChargeNotice" class="card hidden" style="background:#fff7ed;border-color:#fed7aa;">
+            <p style="margin:0;font-size:0.9rem;">BookPrintAPI 웹사이트에서 충전금을 충전해주세요.</p>
+        </div>
+
+        <div id="creditTxTable">
+            <div class="empty-state">조회를 클릭하세요.</div>
+        </div>
+    </div>
+</div>
+
+<!-- ══════════════════════════════════════ -->
+<!-- 탭 4: 로그 -->
+<!-- ══════════════════════════════════════ -->
+<div id="tab-log" class="tab-panel">
+    <div class="card">
+        <div class="action-bar">
+            <h2>실행 로그</h2>
+            <button class="btn btn-outline btn-sm" onclick="clearLog()">로그 초기화</button>
+        </div>
+        <div id="logArea" class="log-area">
+            <div class="log-info">[시작] 파트너 주문 프로그램 준비 완료</div>
+        </div>
+    </div>
+</div>
+
+<!-- ── 주문 상세 모달 ── -->
+<div id="orderModal" class="modal-overlay" onclick="if(event.target===this)closeModal()">
+    <div class="modal">
+        <div class="modal-header">
+            <h2>주문 상세</h2>
+            <button class="modal-close" onclick="closeModal()">&times;</button>
+        </div>
+        <div id="orderDetailContent"></div>
+        <div id="orderDetailActions" class="flex-end mt-16"></div>
+    </div>
+</div>
+
+<script src="sweetbook-sdk-core.js"></script>
+<script src="sweetbook-sdk-order.js"></script>
+<script>
+    // config.js 로드 (없을 수 있음)
+    try {
+        const s = document.createElement('script');
+        s.src = 'config.js';
+        s.onload = () => applyConfig();
+        s.onerror = () => {};
+        document.head.appendChild(s);
+    } catch(e) {}
+</script>
+<script src="app.js"></script>
+
+</body>
+</html>

@@ -362,13 +362,13 @@ function getShipping() {
 
 function validateOrder() {
     const items = getSelectedItems();
-    if (!items.length) { log('주문할 책을 선택하세요.', 'error'); return false; }
+    if (!items.length) { alert('주문할 책을 선택하세요.'); return false; }
 
     const ship = getShipping();
-    if (!ship.recipientName) { log('수령인을 입력하세요.', 'error'); return false; }
-    if (!ship.recipientPhone) { log('전화번호를 입력하세요.', 'error'); return false; }
-    if (!ship.postalCode) { log('우편번호를 입력하세요.', 'error'); return false; }
-    if (!ship.address1) { log('주소를 입력하세요.', 'error'); return false; }
+    if (!ship.recipientName) { alert('수령인을 입력하세요.'); document.getElementById('recipientName').focus(); return false; }
+    if (!ship.recipientPhone) { alert('전화번호를 입력하세요.'); document.getElementById('recipientPhone').focus(); return false; }
+    if (!ship.postalCode) { alert('우편번호를 입력하세요.'); document.getElementById('postalCode').focus(); return false; }
+    if (!ship.address1) { alert('주소를 입력하세요.'); document.getElementById('address1').focus(); return false; }
     return true;
 }
 

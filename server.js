@@ -30,7 +30,7 @@ const MIME_TYPES = {
 
 const CORS_HEADERS = {
     'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Headers': 'Authorization, Content-Type, X-Transaction-ID',
+    'Access-Control-Allow-Headers': 'Authorization, Content-Type, Idempotency-Key',
     'Access-Control-Allow-Methods': 'GET, POST, PATCH, DELETE, OPTIONS',
 };
 
@@ -63,7 +63,7 @@ function proxyApi(req, res) {
     };
     if (req.headers['authorization']) headers['Authorization'] = req.headers['authorization'];
     if (req.headers['content-type']) headers['Content-Type'] = req.headers['content-type'];
-    if (req.headers['x-transaction-id']) headers['X-Transaction-ID'] = req.headers['x-transaction-id'];
+    if (if (req.headers['idempotency-key']) headers['Idempotency-Key'] = req.headers['idempotency-key'];
 
     console.log(`[proxy] ${req.method} ${targetUrl.href}`);
     console.log(`[proxy] Auth: ${headers['Authorization'] ? headers['Authorization'].substring(0, 20) + '...' : '(없음)'}`);

@@ -1,131 +1,100 @@
 /**
- * 파트너 주문 프로그램 — 메인 앱 로직
+ * 파트너 주문 demo — 프론트엔드
+ *
+ * 이 파일은 브라우저에서 실행됩니다.
+ * Sweetbook SDK와 API Key는 백엔드(server.js)에만 존재하며,
+ * 여기서는 백엔드가 노출한 좁은 REST 엔드포인트(/api/*)만 호출합니다.
  */
 
 // ============================================================
 // 전역 상태
 // ============================================================
 
-let client = null;                // OrderClient 인스턴스
-let selectedBooks = new Map();    // bookUid → { bookUid, title, pageCount, specName, quantity }
+let currentEnv = 'sandbox';           // 서버에서 주입받음
+let selectedBooks = new Map();        // bookUid → { bookUid, title, pageCount, specName, quantity }
 let ordersOffset = 0;
 const ORDERS_LIMIT = 20;
 
-// ── 환경별 API Key 저장 ──
-const _envKeys = { live: '', sandbox: '' };
-
-function getSelectedEnv() {
-    return document.querySelector('input[name="apiEnv"]:checked')?.value || 'sandbox';
-}
-
-function onEnvChange() {
-    const keyInput = document.getElementById('apiKeyInput');
-    const prev = document.querySelector('input[name="apiEnv"]:not(:checked)')?.value;
-    if (prev && keyInput) _envKeys[prev] = keyInput.value;
-    const env = getSelectedEnv();
-    if (keyInput) keyInput.value = _envKeys[env] || '';
-    const warn = document.getElementById('envWarning');
-    if (warn) {
-        const isLocal = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
-        warn.style.display = (env === 'live' && isLocal) ? '' : 'none';
-    }
-    updateChargeSectionVisibility();
-    if (keyInput.value.trim()) initClient();
-}
-
 // ============================================================
-// 설정 & 초기화
+// API 클라이언트 — 백엔드 /api/* 호출
 // ============================================================
 
-function applyConfig() {
-    if (typeof APP_CONFIG === 'undefined') return;
-    const keyInput = document.getElementById('apiKeyInput');
-
-    if (APP_CONFIG.environments) {
-        const envs = APP_CONFIG.environments;
-        if (envs.live?.apiKey) _envKeys.live = envs.live.apiKey;
-        if (envs.sandbox?.apiKey) _envKeys.sandbox = envs.sandbox.apiKey;
-    } else if (APP_CONFIG.userApiKey) {
-        _envKeys.live = APP_CONFIG.userApiKey;
-        _envKeys.sandbox = APP_CONFIG.userApiKey;
+async function apiFetch(method, path, { query, body } = {}) {
+    let url = path;
+    if (query) {
+        const qs = new URLSearchParams(Object.entries(query).filter(([_, v]) => v !== undefined && v !== null && v !== ''));
+        const s = qs.toString();
+        if (s) url += '?' + s;
     }
-    const defaultEnv = APP_CONFIG.defaultEnv || 'sandbox';
-    const radio = document.querySelector(`input[name="apiEnv"][value="${defaultEnv}"]`);
-    if (radio) radio.checked = true;
-    keyInput.value = _envKeys[getSelectedEnv()] || '';
+    const init = {
+        method,
+        headers: body ? { 'Content-Type': 'application/json' } : {},
+    };
+    if (body !== undefined) init.body = JSON.stringify(body);
 
-    document.querySelectorAll('input[name="apiEnv"]').forEach(r => {
-        r.addEventListener('change', onEnvChange);
-    });
+    const res = await fetch(url, init);
+    const text = await res.text();
+    let data = null;
+    try { data = text ? JSON.parse(text) : null; } catch (e) { data = { raw: text }; }
 
-    // API Key가 있으면 자동 연결
-    if (document.getElementById('apiKeyInput').value.trim()) {
-        initClient();
+    if (!res.ok) {
+        const err = new Error((data && data.error) || `HTTP ${res.status}`);
+        err.statusCode = res.status;
+        err.details = data && data.details;
+        throw err;
     }
-
-    // Tab 자동완성: 빈 입력란에서 Tab 누르면 placeholder 값으로 채움
-    document.addEventListener('keydown', (e) => {
-        if (e.key === 'Tab' && !e.shiftKey) {
-            const el = e.target;
-            if (el.tagName === 'INPUT' && el.type === 'text' && !el.value.trim() && el.placeholder) {
-                e.preventDefault();
-                el.value = el.placeholder;
-                const inputs = Array.from(document.querySelectorAll('input[type="text"]:not([style*="display:none"])'));
-                const idx = inputs.indexOf(el);
-                if (idx >= 0 && idx < inputs.length - 1) inputs[idx + 1].focus();
-            }
-        }
-    });
+    return data;
 }
 
-function getBaseUrl() {
-    const env = getSelectedEnv();
-    let resolved;
-    if (typeof APP_CONFIG !== 'undefined' && APP_CONFIG.environments?.[env]?.url) {
-        resolved = APP_CONFIG.environments[env].url;
-    } else {
-        const url = APP_CONFIG?.apiServers?.[0]?.url || 'https://api.sweetbook.com/v1';
-        resolved = env === 'sandbox'
-            ? url.replace('://dev-api.', '://dev-api-sandbox.').replace('://api.', '://api-sandbox.')
-            : url;
-    }
-    // localhost에서는 CORS 우회를 위해 로컬 프록시 경유
-    if (window.location.hostname === 'localhost') {
-        return `/proxy/api/${resolved}`;
-    }
-    return resolved;
-}
+const api = {
+    env: {
+        get: () => apiFetch('GET', '/api/env'),
+    },
+    credits: {
+        balance: () => apiFetch('GET', '/api/credits/balance'),
+        transactions: ({ limit } = {}) => apiFetch('GET', '/api/credits/transactions', { query: { limit } }),
+        sandboxCharge: (amount, memo) => apiFetch('POST', '/api/credits/sandbox-charge', { body: { amount, memo } }),
+    },
+    books: {
+        list: ({ status, limit, offset } = {}) => apiFetch('GET', '/api/books', { query: { status, limit, offset } }),
+    },
+    orders: {
+        estimate: (items) => apiFetch('POST', '/api/orders/estimate', { body: { items } }),
+        create: (payload) => apiFetch('POST', '/api/orders', { body: payload }),
+        list: ({ limit, offset, status } = {}) => apiFetch('GET', '/api/orders', { query: { limit, offset, status } }),
+        get: (uid) => apiFetch('GET', `/api/orders/${encodeURIComponent(uid)}`),
+        cancel: (uid, reason) => apiFetch('POST', `/api/orders/${encodeURIComponent(uid)}/cancel`, { body: { reason } }),
+        updateShipping: (uid, update) => apiFetch('PATCH', `/api/orders/${encodeURIComponent(uid)}/shipping`, { body: update }),
+    },
+};
 
-function initClient() {
-    const apiKey = document.getElementById('apiKeyInput').value.trim();
-    const baseUrl = getBaseUrl();
-    const useCookie = (typeof APP_CONFIG !== 'undefined' && APP_CONFIG.useCookie) || false;
-    _envKeys[getSelectedEnv()] = apiKey;
+// ============================================================
+// 초기화 — 서버의 env 정보를 받아 UI 조정
+// ============================================================
 
-    if (!apiKey && !useCookie) { log('API Key를 입력하세요.', 'error'); return; }
-
+async function boot() {
     try {
-        client = new OrderClient({ apiKey: apiKey || undefined, baseUrl, useCookie });
-        const connStatus = document.getElementById('connStatus');
-        connStatus.textContent = '확인 중...';
-        connStatus.style.color = '';
+        const info = await api.env.get();
+        currentEnv = info.env;
+        renderEnvBanner();
         updateChargeSectionVisibility();
-        // API Key 유효성 확인 (충전금 조회로 검증)
-        refreshCredit().then(() => {
-            document.getElementById('connStatus').textContent = '연결됨';
-            log(`API 연결: ${getBaseUrl()}`, 'success');
-        }).catch(() => {});
+        await refreshCredit();
+        log(`백엔드 연결됨 (env=${currentEnv})`, 'success');
     } catch (e) {
-        log(`연결 실패: ${e.message}`, 'error');
+        log(`백엔드 연결 실패: ${e.message}`, 'error');
     }
 }
 
-function ensureClient() {
-    if (!client) {
-        log('먼저 API Key를 입력하고 연결하세요.', 'error');
-        return false;
+function renderEnvBanner() {
+    const el = document.getElementById('envBanner');
+    if (!el) return;
+    if (currentEnv === 'live') {
+        el.textContent = '운영 환경 — 실제 충전금이 차감되고 실제 주문이 생성됩니다.';
+        el.className = 'env-banner env-banner-live';
+    } else {
+        el.textContent = '샌드박스 환경 — 테스트 주문만 생성됩니다.';
+        el.className = 'env-banner env-banner-sandbox';
     }
-    return true;
 }
 
 // ============================================================
@@ -141,20 +110,16 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
     });
 });
 
-// 환경 변경은 onEnvChange에서 처리
-
 // ============================================================
 // 충전금
 // ============================================================
 
-function isTestMode() {
-    return getSelectedEnv() === 'sandbox';
-}
+function isSandbox() { return currentEnv === 'sandbox'; }
 
 function updateChargeSectionVisibility() {
     const sandboxSection = document.getElementById('sandboxChargeSection');
     const liveNotice = document.getElementById('liveChargeNotice');
-    if (isTestMode()) {
+    if (isSandbox()) {
         sandboxSection.classList.remove('hidden');
         liveNotice.classList.add('hidden');
     } else {
@@ -164,57 +129,43 @@ function updateChargeSectionVisibility() {
 }
 
 async function doSandboxCharge() {
-    if (!ensureClient()) return;
     const amount = parseInt(document.getElementById('chargeAmount').value) || 0;
     if (amount <= 0) { log('충전 금액을 입력하세요.', 'error'); return; }
-
     try {
-        log(`Sandbox 충전 중... ${Number(amount).toLocaleString()}원`, 'info');
-        const data = await client.credits.sandboxCharge(amount, '파트너 주문 프로그램 sandbox 충전');
-        const balance = data.balance ?? data.Balance ?? 0;
-        const badge = document.getElementById('creditBadge');
-        badge.textContent = `잔액: ${Number(balance).toLocaleString()}원`;
-        badge.classList.remove('hidden');
-        document.getElementById('chargeBalanceResult').textContent = `→ 잔액: ${Number(balance).toLocaleString()}원`;
-        log(`Sandbox 충전 완료! 잔액: ${Number(balance).toLocaleString()}원`, 'success');
+        log(`Sandbox 충전 중... ${amount.toLocaleString()}원`, 'info');
+        const data = await api.credits.sandboxCharge(amount);
+        const balance = data.balance ?? 0;
+        setCreditBadge(balance);
+        document.getElementById('chargeBalanceResult').textContent = `→ 잔액: ${balance.toLocaleString()}원`;
+        log(`Sandbox 충전 완료! 잔액: ${balance.toLocaleString()}원`, 'success');
     } catch (e) {
         log(`충전 실패: ${e.message}`, 'error');
     }
 }
 
+function setCreditBadge(balance) {
+    const badge = document.getElementById('creditBadge');
+    badge.textContent = `잔액: ${Number(balance || 0).toLocaleString()}원`;
+    badge.classList.remove('hidden');
+}
+
 async function refreshCredit() {
-    if (!ensureClient()) return;
     try {
-        const data = await client.credits.getBalance();
-        const balance = data.balance ?? data.Balance ?? 0;
-        const balanceStr = `잔액: ${Number(balance).toLocaleString()}원`;
-        const badge = document.getElementById('creditBadge');
-        badge.textContent = balanceStr;
-        badge.classList.remove('hidden');
-        document.getElementById('chargeBalanceResult').textContent = balanceStr;
-        log(`충전금 잔액: ${Number(balance).toLocaleString()}원`, 'info');
+        const data = await api.credits.balance();
+        const balance = data.balance ?? 0;
+        setCreditBadge(balance);
+        document.getElementById('chargeBalanceResult').textContent = `잔액: ${balance.toLocaleString()}원`;
+        log(`충전금 잔액: ${balance.toLocaleString()}원`, 'info');
     } catch (e) {
-        if (e.statusCode === 401) {
-            client = null;
-            const connStatus = document.getElementById('connStatus');
-            connStatus.textContent = '연결 실패';
-            connStatus.style.color = 'var(--danger)';
-            document.getElementById('creditBadge').classList.add('hidden');
-            document.getElementById('chargeBalanceResult').textContent = '';
-            log('API Key가 유효하지 않습니다. 키를 확인하세요.', 'error');
-        } else {
-            log(`충전금 조회 실패: ${e.message}`, 'error');
-        }
-        throw e;
+        log(`충전금 조회 실패: ${e.message}`, 'error');
     }
 }
 
 async function loadCreditTx() {
-    if (!ensureClient()) return;
     try {
         await refreshCredit();
-        const data = await client.credits.transactions({ limit: 50 });
-        const txList = data?.transactions ?? data?.Transactions ?? [];
+        const data = await api.credits.transactions({ limit: 50 });
+        const txList = data?.transactions ?? [];
         const pagination = data?.pagination ?? {};
 
         if (!txList.length) {
@@ -226,15 +177,15 @@ async function loadCreditTx() {
             <thead><tr><th>일시</th><th>사유</th><th>금액</th><th>잔액</th><th>메모</th></tr></thead>
             <tbody>`;
         txList.forEach(tx => {
-            const amt = tx.amount ?? tx.Amount ?? 0;
-            const bal = tx.balanceAfter ?? tx.BalanceAfter ?? 0;
-            const reason = tx.reasonDisplay ?? tx.reason ?? tx.ReasonDisplay ?? '';
-            const memo = tx.memo ?? tx.Memo ?? '';
-            const dt = formatDate(tx.createdAt ?? tx.CreatedAt);
+            const amt = tx.amount ?? 0;
+            const bal = tx.balanceAfter ?? 0;
+            const reason = tx.reasonDisplay ?? tx.reason ?? '';
+            const memo = tx.memo ?? '';
+            const dt = formatDate(tx.createdAt);
             const amtClass = amt >= 0 ? 'log-success' : 'log-error';
             html += `<tr>
                 <td class="nowrap">${dt}</td>
-                <td>${reason}</td>
+                <td>${escHtml(reason)}</td>
                 <td class="text-right ${amtClass}">${Number(amt).toLocaleString()}</td>
                 <td class="text-right">${Number(bal).toLocaleString()}</td>
                 <td class="text-muted">${escHtml(memo)}</td>
@@ -242,7 +193,8 @@ async function loadCreditTx() {
         });
         html += '</tbody></table>';
         document.getElementById('creditTxTable').innerHTML = html;
-        log(`충전금 거래 ${txList.length}건 조회 완료`, 'success');
+        const total = pagination.total ?? txList.length;
+        log(`충전금 거래 ${txList.length}건 조회 (총 ${total}건)`, 'success');
     } catch (e) {
         log(`충전금 거래 조회 실패: ${e.message}`, 'error');
     }
@@ -253,24 +205,21 @@ async function loadCreditTx() {
 // ============================================================
 
 async function loadBooks() {
-    if (!ensureClient()) return;
     try {
         log('FINALIZED 책 목록 조회 중...', 'info');
-        const data = await client.books.list({ status: 'finalized', limit: 100 });
-        const books = data?.books ?? data?.Books ?? (Array.isArray(data) ? data : []);
-
+        const data = await api.books.list({ status: 'finalized', limit: 100 });
+        const books = data?.books ?? (Array.isArray(data) ? data : []);
         if (!books.length) {
             document.getElementById('bookList').innerHTML = '<div class="empty-state">FINALIZED 상태의 책이 없습니다.</div>';
             log('FINALIZED 책 없음', 'warn');
             return;
         }
 
-        // 전체 선택
         books.forEach(b => {
-            const uid = b.bookUid ?? b.BookUid;
-            const title = b.title ?? b.Title ?? '(제목 없음)';
-            const pages = b.pageCount ?? b.PageCount ?? 0;
-            const spec = b.bookSpecName ?? b.specName ?? b.BookSpecName ?? '';
+            const uid = b.bookUid;
+            const title = b.title ?? '(제목 없음)';
+            const pages = b.pageCount ?? 0;
+            const spec = b.bookSpecName ?? b.specName ?? '';
             selectedBooks.set(uid, { bookUid: uid, title, pageCount: pages, specName: spec, quantity: 1 });
         });
         renderBookList(books);
@@ -283,10 +232,10 @@ async function loadBooks() {
 function renderBookList(books) {
     let html = '';
     books.forEach(b => {
-        const uid = b.bookUid ?? b.BookUid;
-        const title = b.title ?? b.Title ?? '(제목 없음)';
-        const pages = b.pageCount ?? b.PageCount ?? 0;
-        const spec = b.bookSpecName ?? b.specName ?? b.BookSpecName ?? '';
+        const uid = b.bookUid;
+        const title = b.title ?? '(제목 없음)';
+        const pages = b.pageCount ?? 0;
+        const spec = b.bookSpecName ?? b.specName ?? '';
         const checked = selectedBooks.has(uid);
         const qty = checked ? selectedBooks.get(uid).quantity : 1;
 
@@ -314,25 +263,18 @@ function toggleBook(uid, title, pages, spec, checked) {
 
 function updateQty(uid, val) {
     const qty = Math.max(1, parseInt(val) || 1);
-    if (selectedBooks.has(uid)) {
-        selectedBooks.get(uid).quantity = qty;
-    }
+    if (selectedBooks.has(uid)) selectedBooks.get(uid).quantity = qty;
 }
 
 function addBookDirect() {
     const input = document.getElementById('bookUidDirect');
     const uid = input.value.trim();
     if (!uid) return;
-
-    if (selectedBooks.has(uid)) {
-        log(`이미 추가된 책: ${uid}`, 'warn');
-        return;
-    }
+    if (selectedBooks.has(uid)) { log(`이미 추가된 책: ${uid}`, 'warn'); return; }
 
     selectedBooks.set(uid, { bookUid: uid, title: uid, pageCount: 0, specName: '', quantity: 1 });
     input.value = '';
 
-    // 목록에 추가 렌더
     const container = document.getElementById('bookList');
     const emptyState = container.querySelector('.empty-state');
     if (emptyState) container.innerHTML = '';
@@ -357,9 +299,7 @@ function addBookDirect() {
 
 function getSelectedItems() {
     const items = [];
-    selectedBooks.forEach(b => {
-        items.push({ bookUid: b.bookUid, quantity: b.quantity });
-    });
+    selectedBooks.forEach(b => items.push({ bookUid: b.bookUid, quantity: b.quantity }));
     return items;
 }
 
@@ -370,19 +310,18 @@ function getShipping() {
         postalCode: document.getElementById('shipPostal').value.trim(),
         address1: document.getElementById('shipAddr1').value.trim(),
         address2: document.getElementById('shipAddr2').value.trim() || undefined,
-        memo: document.getElementById('shipMemo').value.trim() || undefined,
+        shippingMemo: document.getElementById('shipMemo').value.trim() || undefined,
     };
 }
 
 function validateOrder() {
     const items = getSelectedItems();
     if (!items.length) { alert('주문할 책을 선택하세요.'); return false; }
-
     const ship = getShipping();
-    if (!ship.recipientName) { alert('수령인을 입력하세요.'); document.getElementById('recipientName').focus(); return false; }
-    if (!ship.recipientPhone) { alert('전화번호를 입력하세요.'); document.getElementById('recipientPhone').focus(); return false; }
-    if (!ship.postalCode) { alert('우편번호를 입력하세요.'); document.getElementById('postalCode').focus(); return false; }
-    if (!ship.address1) { alert('주소를 입력하세요.'); document.getElementById('address1').focus(); return false; }
+    if (!ship.recipientName) { alert('수령인을 입력하세요.'); document.getElementById('shipName').focus(); return false; }
+    if (!ship.recipientPhone) { alert('전화번호를 입력하세요.'); document.getElementById('shipPhone').focus(); return false; }
+    if (!ship.postalCode) { alert('우편번호를 입력하세요.'); document.getElementById('shipPostal').focus(); return false; }
+    if (!ship.address1) { alert('주소를 입력하세요.'); document.getElementById('shipAddr1').focus(); return false; }
     return true;
 }
 
@@ -391,24 +330,23 @@ function validateOrder() {
 // ============================================================
 
 async function doEstimate() {
-    if (!ensureClient()) return;
     const items = getSelectedItems();
     if (!items.length) { log('견적할 책을 선택하세요.', 'error'); return; }
 
     try {
         log(`견적 조회 중... (${items.length}권)`, 'info');
-        const data = await client.orders.estimate({ items });
+        const data = await api.orders.estimate(items);
 
         const el = document.getElementById('estimateResult');
         el.classList.remove('hidden');
 
         let itemsHtml = '';
         (data.items || []).forEach(it => {
-            const uid = it.bookUid ?? it.BookUid ?? '';
-            const pages = it.pageCount ?? it.PageCount ?? 0;
-            const qty = it.quantity ?? it.Quantity ?? 1;
-            const unit = it.unitPrice ?? it.UnitPrice ?? 0;
-            const amt = it.itemAmount ?? it.ItemAmount ?? 0;
+            const uid = it.bookUid ?? '';
+            const pages = it.pageCount ?? 0;
+            const qty = it.quantity ?? 1;
+            const unit = it.unitPrice ?? 0;
+            const amt = it.itemAmount ?? 0;
             const title = selectedBooks.get(uid)?.title || uid;
             itemsHtml += `<div class="estimate-row">
                 <span>${escHtml(title)} (${pages}p x ${qty})</span>
@@ -416,13 +354,13 @@ async function doEstimate() {
             </div>`;
         });
 
-        const productAmt = data.productAmount ?? data.ProductAmount ?? 0;
-        const shipFee = data.shippingFee ?? data.ShippingFee ?? 0;
-        const packFee = data.packagingFee ?? data.PackagingFee ?? 0;
-        const totalAmt = data.totalAmount ?? data.TotalAmount ?? 0;
-        const paidCredit = data.paidCreditAmount ?? data.PaidCreditAmount ?? 0;
-        const creditBal = data.creditBalance ?? data.CreditBalance ?? 0;
-        const sufficient = data.creditSufficient ?? data.CreditSufficient ?? false;
+        const productAmt = data.productAmount ?? 0;
+        const shipFee = data.shippingFee ?? 0;
+        const packFee = data.packagingFee ?? 0;
+        const totalAmt = data.totalAmount ?? 0;
+        const paidCredit = data.paidCreditAmount ?? 0;
+        const creditBal = data.creditBalance ?? 0;
+        const sufficient = data.creditSufficient ?? false;
 
         el.innerHTML = `<div class="estimate-result">
             <h3>견적 결과</h3>
@@ -449,9 +387,7 @@ async function doEstimate() {
 // ============================================================
 
 async function doOrder() {
-    if (!ensureClient()) return;
     if (!validateOrder()) return;
-
     const items = getSelectedItems();
     const shipping = getShipping();
     const externalRef = document.getElementById('externalRef').value.trim() || undefined;
@@ -466,40 +402,26 @@ async function doOrder() {
 
     try {
         log(`주문 생성 중... (${items.length}권, ${shipping.recipientName})`, 'info');
-
         const payload = { items, shipping };
         if (externalRef) payload.externalRef = externalRef;
+        const data = await api.orders.create(payload);
 
-        const data = await client.orders.create(payload);
-
-        const orderUid = data.orderUid ?? data.OrderUid ?? '';
-        const totalAmt = data.totalAmount ?? data.TotalAmount ?? 0;
-        const paidCredit = data.paidCreditAmount ?? data.PaidCreditAmount ?? 0;
-        const balAfter = data.creditBalanceAfter ?? data.CreditBalanceAfter;
+        const orderUid = data.orderUid ?? '';
+        const paidCredit = data.paidCreditAmount ?? 0;
+        const balAfter = data.creditBalanceAfter;
 
         log(`주문 생성 완료! orderUid=${orderUid}, 결제=${Number(paidCredit).toLocaleString()}원`, 'success');
+        if (balAfter != null) setCreditBadge(balAfter);
 
-        if (balAfter !== undefined && balAfter !== null) {
-            const badge = document.getElementById('creditBadge');
-            badge.textContent = `잔액: ${Number(balAfter).toLocaleString()}원`;
-            badge.classList.remove('hidden');
-        }
-
-        // 선택 초기화
         selectedBooks.clear();
         document.getElementById('bookList').innerHTML = '<div class="empty-state">주문이 완료되었습니다. 주문 내역 탭에서 확인하세요.</div>';
         document.getElementById('estimateResult').classList.add('hidden');
 
-        // 주문 내역 탭으로 이동
         document.querySelector('[data-tab="tab-orders"]').click();
         loadOrders();
-
     } catch (e) {
-        if (e.statusCode === 402) {
-            log(`잔액 부족! ${e.message}`, 'error');
-        } else {
-            log(`주문 실패: ${e.message}`, 'error');
-        }
+        if (e.statusCode === 402) log(`잔액 부족! ${e.message}`, 'error');
+        else log(`주문 실패: ${e.message}`, 'error');
     } finally {
         btn.disabled = false;
         btn.textContent = '주문하기';
@@ -511,16 +433,14 @@ async function doOrder() {
 // ============================================================
 
 async function loadOrders(offset = 0) {
-    if (!ensureClient()) return;
     ordersOffset = offset;
-
     const statusFilter = document.getElementById('orderStatusFilter').value;
     const params = { limit: ORDERS_LIMIT, offset };
     if (statusFilter) params.status = parseInt(statusFilter);
 
     try {
         log('주문 목록 조회 중...', 'info');
-        const data = await client.orders.list(params);
+        const data = await api.orders.list(params);
         const orders = data?.orders ?? [];
         const pagination = data?.pagination ?? {};
 
@@ -534,24 +454,22 @@ async function loadOrders(offset = 0) {
         let html = `<table>
             <thead><tr><th>주문번호</th><th>상태</th><th>항목수</th><th>총액</th><th>결제액</th><th>수령인</th><th>주문일</th><th></th></tr></thead>
             <tbody>`;
-
         orders.forEach(o => {
-            const uid = o.orderUid ?? o.OrderUid;
-            const st = o.orderStatus ?? o.OrderStatus;
-            const stDisplay = o.orderStatusDisplay ?? o.OrderStatusDisplay ?? '';
-            const itemCnt = o.itemCount ?? o.ItemCount ?? 0;
-            const total = o.totalAmount ?? o.TotalAmount ?? 0;
-            const paid = o.paidCreditAmount ?? o.PaidCreditAmount ?? 0;
-            const recipient = o.recipientName ?? o.RecipientName ?? '';
-            const dt = formatDate(o.orderedAt ?? o.OrderedAt);
-            const extRef = o.externalRef ?? o.ExternalRef ?? '';
-
+            const uid = o.orderUid;
+            const st = o.orderStatus;
+            const stDisplay = o.orderStatusDisplay ?? '';
+            const itemCnt = o.itemCount ?? 0;
+            const total = o.totalAmount ?? 0;
+            const paid = o.paidCreditAmount ?? 0;
+            const recipient = o.recipientName ?? '';
+            const dt = formatDate(o.orderedAt);
+            const extRef = o.externalRef ?? '';
             html += `<tr style="cursor:pointer" onclick="showOrderDetail('${uid}')">
                 <td>
                     <div style="font-weight:600">${uid}</div>
                     ${extRef ? `<div class="text-muted">${escHtml(extRef)}</div>` : ''}
                 </td>
-                <td><span class="status-badge status-${st}">${stDisplay || st}</span></td>
+                <td><span class="status-badge status-${st}">${escHtml(stDisplay) || st}</span></td>
                 <td>${itemCnt}</td>
                 <td class="text-right nowrap">${Number(total).toLocaleString()}</td>
                 <td class="text-right nowrap">${Number(paid).toLocaleString()}</td>
@@ -563,7 +481,6 @@ async function loadOrders(offset = 0) {
         html += '</tbody></table>';
         document.getElementById('orderTableWrap').innerHTML = html;
 
-        // 페이지네이션
         const total = pagination.total ?? 0;
         const hasNext = pagination.hasNext ?? false;
         let pgHtml = '';
@@ -583,36 +500,29 @@ async function loadOrders(offset = 0) {
 // ============================================================
 
 async function showOrderDetail(orderUid) {
-    if (!ensureClient()) return;
-
     try {
         log(`주문 상세 조회: ${orderUid}`, 'info');
-        const data = await client.orders.get(orderUid);
-
-        const st = data.orderStatus ?? data.OrderStatus;
-        const stDisplay = data.orderStatusDisplay ?? data.OrderStatusDisplay ?? '';
+        const data = await api.orders.get(orderUid);
+        const st = data.orderStatus;
+        const stDisplay = data.orderStatusDisplay ?? '';
 
         let html = '';
-
-        // 주문 기본정보
         html += `<div class="detail-section">
             <h3>주문 정보</h3>
             <div class="detail-grid">
-                <span class="detail-label">주문번호</span><span>${data.orderUid ?? data.OrderUid}</span>
-                <span class="detail-label">상태</span><span><span class="status-badge status-${st}">${stDisplay || st}</span></span>
-                <span class="detail-label">유형</span><span>${data.orderType ?? data.OrderType ?? ''}</span>
-                <span class="detail-label">외부참조</span><span>${data.externalRef ?? data.ExternalRef ?? '-'}</span>
-                <span class="detail-label">주문일시</span><span>${formatDate(data.orderedAt ?? data.OrderedAt)}</span>
+                <span class="detail-label">주문번호</span><span>${data.orderUid}</span>
+                <span class="detail-label">상태</span><span><span class="status-badge status-${st}">${escHtml(stDisplay) || st}</span></span>
+                <span class="detail-label">유형</span><span>${escHtml(data.orderType ?? '')}</span>
+                <span class="detail-label">외부참조</span><span>${escHtml(data.externalRef ?? '-')}</span>
+                <span class="detail-label">주문일시</span><span>${formatDate(data.orderedAt)}</span>
             </div>
         </div>`;
 
-        // 금액
-        const totalAmt = data.totalAmount ?? data.TotalAmount ?? 0;
-        const prodAmt = data.totalProductAmount ?? data.TotalProductAmount ?? 0;
-        const shipFee = data.totalShippingFee ?? data.TotalShippingFee ?? 0;
-        const packFee = data.totalPackagingFee ?? data.TotalPackagingFee ?? 0;
-        const paidCredit = data.paidCreditAmount ?? data.PaidCreditAmount ?? 0;
-
+        const totalAmt = data.totalAmount ?? 0;
+        const prodAmt = data.totalProductAmount ?? 0;
+        const shipFee = data.totalShippingFee ?? 0;
+        const packFee = data.totalPackagingFee ?? 0;
+        const paidCredit = data.paidCreditAmount ?? 0;
         html += `<div class="detail-section">
             <h3>금액</h3>
             <div class="detail-grid">
@@ -624,50 +534,47 @@ async function showOrderDetail(orderUid) {
             </div>
         </div>`;
 
-        // 배송지
         html += `<div class="detail-section">
             <h3>배송지</h3>
             <div class="detail-grid">
-                <span class="detail-label">수령인</span><span>${escHtml(data.recipientName ?? data.RecipientName ?? '')}</span>
-                <span class="detail-label">전화번호</span><span>${escHtml(data.recipientPhone ?? data.RecipientPhone ?? '')}</span>
-                <span class="detail-label">주소</span><span>[${data.postalCode ?? data.PostalCode ?? ''}] ${escHtml(data.address1 ?? data.Address1 ?? '')} ${escHtml(data.address2 ?? data.Address2 ?? '')}</span>
-                <span class="detail-label">배송메모</span><span>${escHtml(data.shippingMemo ?? data.ShippingMemo ?? '-')}</span>
-                ${(data.trackingNumber ?? data.TrackingNumber) ? `<span class="detail-label">송장번호</span><span>${data.trackingCarrier ?? data.TrackingCarrier ?? ''} ${data.trackingNumber ?? data.TrackingNumber ?? ''}</span>` : ''}
+                <span class="detail-label">수령인</span><span>${escHtml(data.recipientName ?? '')}</span>
+                <span class="detail-label">전화번호</span><span>${escHtml(data.recipientPhone ?? '')}</span>
+                <span class="detail-label">주소</span><span>[${escHtml(data.postalCode ?? '')}] ${escHtml(data.address1 ?? '')} ${escHtml(data.address2 ?? '')}</span>
+                <span class="detail-label">배송메모</span><span>${escHtml(data.shippingMemo ?? '-')}</span>
+                ${data.trackingNumber ? `<span class="detail-label">송장번호</span><span>${escHtml(data.trackingCarrier ?? '')} ${escHtml(data.trackingNumber)}</span>` : ''}
             </div>
         </div>`;
 
-        // 취소 정보
         if (st === 80 || st === 81) {
             html += `<div class="detail-section">
                 <h3>취소 정보</h3>
                 <div class="detail-grid">
-                    <span class="detail-label">취소 사유</span><span>${escHtml(data.cancelReason ?? data.CancelReason ?? '')}</span>
-                    <span class="detail-label">환불 금액</span><span>${Number(data.refundAmount ?? data.RefundAmount ?? 0).toLocaleString()}원</span>
-                    <span class="detail-label">취소 일시</span><span>${formatDate(data.cancelledAt ?? data.CancelledAt)}</span>
+                    <span class="detail-label">취소 사유</span><span>${escHtml(data.cancelReason ?? '')}</span>
+                    <span class="detail-label">환불 금액</span><span>${Number(data.refundAmount ?? 0).toLocaleString()}원</span>
+                    <span class="detail-label">취소 일시</span><span>${formatDate(data.cancelledAt)}</span>
                 </div>
             </div>`;
         }
 
-        // 항목
-        const items = data.items ?? data.Items ?? [];
+        const items = data.items ?? [];
         if (items.length) {
             html += `<div class="detail-section">
                 <h3>주문 항목 (${items.length}건)</h3>
                 <table><thead><tr><th>책</th><th>규격</th><th>페이지</th><th>수량</th><th>단가</th><th>금액</th><th>상태</th></tr></thead><tbody>`;
             items.forEach(it => {
-                const itSt = it.itemStatus ?? it.ItemStatus;
-                const itStDisplay = it.itemStatusDisplay ?? it.ItemStatusDisplay ?? '';
+                const itSt = it.itemStatus;
+                const itStDisplay = it.itemStatusDisplay ?? '';
                 html += `<tr>
                     <td>
-                        <div style="font-weight:500">${escHtml(it.bookTitle ?? it.BookTitle ?? '')}</div>
-                        <div class="text-muted">${it.bookUid ?? it.BookUid ?? ''}</div>
+                        <div style="font-weight:500">${escHtml(it.bookTitle ?? '')}</div>
+                        <div class="text-muted">${it.bookUid ?? ''}</div>
                     </td>
-                    <td class="text-muted">${escHtml(it.bookSpecName ?? it.BookSpecName ?? '')}</td>
-                    <td>${it.pageCount ?? it.PageCount ?? 0}p</td>
-                    <td>${it.quantity ?? it.Quantity ?? 1}</td>
-                    <td class="text-right nowrap">${Number(it.unitPrice ?? it.UnitPrice ?? 0).toLocaleString()}</td>
-                    <td class="text-right nowrap">${Number(it.itemAmount ?? it.ItemAmount ?? 0).toLocaleString()}</td>
-                    <td><span class="status-badge status-${itSt}">${itStDisplay || itSt}</span></td>
+                    <td class="text-muted">${escHtml(it.bookSpecName ?? '')}</td>
+                    <td>${it.pageCount ?? 0}p</td>
+                    <td>${it.quantity ?? 1}</td>
+                    <td class="text-right nowrap">${Number(it.unitPrice ?? 0).toLocaleString()}</td>
+                    <td class="text-right nowrap">${Number(it.itemAmount ?? 0).toLocaleString()}</td>
+                    <td><span class="status-badge status-${itSt}">${escHtml(itStDisplay) || itSt}</span></td>
                 </tr>`;
             });
             html += '</tbody></table></div>';
@@ -675,13 +582,12 @@ async function showOrderDetail(orderUid) {
 
         document.getElementById('orderDetailContent').innerHTML = html;
 
-        // 액션 버튼
         let actionsHtml = '';
         if (st === 20 || st === 25) {
-            actionsHtml += `<button class="btn btn-danger btn-sm" onclick="cancelOrder('${data.orderUid ?? data.OrderUid}')">주문 취소</button>`;
+            actionsHtml += `<button class="btn btn-danger btn-sm" onclick="cancelOrder('${data.orderUid}')">주문 취소</button>`;
         }
         if (st < 60 && st !== 80 && st !== 81) {
-            actionsHtml += `<button class="btn btn-outline btn-sm" onclick="editShipping('${data.orderUid ?? data.OrderUid}')">배송지 변경</button>`;
+            actionsHtml += `<button class="btn btn-outline btn-sm" onclick="editShipping('${data.orderUid}')">배송지 변경</button>`;
         }
         document.getElementById('orderDetailActions').innerHTML = actionsHtml;
 
@@ -702,10 +608,9 @@ function closeModal() {
 async function cancelOrder(orderUid) {
     const reason = prompt('취소 사유를 입력하세요:');
     if (!reason) return;
-
     try {
         log(`주문 취소 중: ${orderUid}`, 'info');
-        await client.orders.cancel(orderUid, reason);
+        await api.orders.cancel(orderUid, reason);
         log(`주문 취소 완료: ${orderUid}`, 'success');
         closeModal();
         loadOrders(ordersOffset);
@@ -723,21 +628,19 @@ let _shippingEditOrderUid = null;
 
 async function editShipping(orderUid) {
     _shippingEditOrderUid = orderUid;
-
-    // 현재 주문 상세에서 배송지 데이터 가져오기
     try {
-        const data = await client.orders.get(orderUid);
+        const data = await api.orders.get(orderUid);
         const el = document.getElementById('orderDetailContent');
         el.innerHTML += `
             <div class="detail-section" id="shippingEditForm" style="margin-top:16px; padding:16px; border:2px solid #667eea; border-radius:8px; background:#f8f9ff;">
                 <h3>배송지 변경</h3>
                 <div class="form-grid">
-                    <div class="form-group"><label>수령인</label><input type="text" id="editShipName" value="${escHtml(data.recipientName ?? data.RecipientName ?? '')}" /></div>
-                    <div class="form-group"><label>전화번호</label><input type="text" id="editShipPhone" value="${escHtml(data.recipientPhone ?? data.RecipientPhone ?? '')}" /></div>
-                    <div class="form-group"><label>우편번호</label><input type="text" id="editShipPostal" value="${escHtml(data.postalCode ?? data.PostalCode ?? '')}" /></div>
-                    <div class="form-group"><label>주소1</label><input type="text" id="editShipAddr1" value="${escHtml(data.address1 ?? data.Address1 ?? '')}" /></div>
-                    <div class="form-group"><label>주소2</label><input type="text" id="editShipAddr2" value="${escHtml(data.address2 ?? data.Address2 ?? '')}" /></div>
-                    <div class="form-group"><label>배송메모</label><input type="text" id="editShipMemo" value="${escHtml(data.shippingMemo ?? data.ShippingMemo ?? '')}" /></div>
+                    <div class="form-group"><label>수령인</label><input type="text" id="editShipName" value="${escAttr(data.recipientName ?? '')}" /></div>
+                    <div class="form-group"><label>전화번호</label><input type="text" id="editShipPhone" value="${escAttr(data.recipientPhone ?? '')}" /></div>
+                    <div class="form-group"><label>우편번호</label><input type="text" id="editShipPostal" value="${escAttr(data.postalCode ?? '')}" /></div>
+                    <div class="form-group"><label>주소1</label><input type="text" id="editShipAddr1" value="${escAttr(data.address1 ?? '')}" /></div>
+                    <div class="form-group"><label>주소2</label><input type="text" id="editShipAddr2" value="${escAttr(data.address2 ?? '')}" /></div>
+                    <div class="form-group"><label>배송메모</label><input type="text" id="editShipMemo" value="${escAttr(data.shippingMemo ?? '')}" /></div>
                 </div>
                 <div style="margin-top:12px; display:flex; gap:8px;">
                     <button class="btn btn-primary btn-sm" onclick="saveShippingEdit()">저장</button>
@@ -762,18 +665,12 @@ async function saveShippingEdit() {
         address2: document.getElementById('editShipAddr2').value.trim(),
         shippingMemo: document.getElementById('editShipMemo').value.trim(),
     };
-
-    // 빈 값 제거
     Object.keys(update).forEach(k => { if (!update[k]) delete update[k]; });
-
-    if (!Object.keys(update).length) {
-        alert('변경할 내용이 없습니다.');
-        return;
-    }
+    if (!Object.keys(update).length) { alert('변경할 내용이 없습니다.'); return; }
 
     try {
         log(`배송지 변경 중: ${orderUid}`, 'info');
-        await client.orders.updateShipping(orderUid, update);
+        await api.orders.updateShipping(orderUid, update);
         log(`배송지 변경 완료: ${orderUid}`, 'success');
         alert('배송지가 변경되었습니다.');
         showOrderDetail(orderUid);
@@ -790,8 +687,7 @@ async function saveShippingEdit() {
 function log(msg, level = 'info') {
     const area = document.getElementById('logArea');
     const ts = new Date().toLocaleTimeString('ko-KR');
-    const cls = `log-${level}`;
-    area.innerHTML += `<div class="${cls}">[${ts}] ${escHtml(msg)}</div>`;
+    area.innerHTML += `<div class="log-${level}">[${ts}] ${escHtml(msg)}</div>`;
     area.scrollTop = area.scrollHeight;
 }
 
@@ -804,7 +700,7 @@ function clearLog() {
 // ============================================================
 
 function escHtml(str) {
-    if (!str) return '';
+    if (str == null) return '';
     return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
@@ -821,9 +717,11 @@ function formatDate(dt) {
 }
 
 // ============================================================
-// 키보드 단축키
+// 키보드 단축키 & 부팅
 // ============================================================
 
 document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') closeModal();
 });
+
+boot();

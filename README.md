@@ -1,248 +1,125 @@
-# 파트너 주문 프로그램
+# 파트너 주문 demo
 
-Sweetbook API 기반 파트너 주문 웹앱.
-파트너사가 생성한 포토북을 단일 또는 묶음으로 주문할 수 있습니다.
+Sweetbook API 기반 파트너 주문 demo 웹앱.
 
 ![screenshot](screenshot.png)
 
-> **참고**: 이 프로그램은 파트너사 서버 간 연동의 **프론트엔드 레퍼런스**입니다.
-> 실제 서비스에서는 API 키를 서버에서 관리하고, 백그라운드에서 API를 호출하세요.
+> **참고**: 이 demo는 **3-tier 구조**로 동작합니다. 브라우저는 Sweetbook API를 직접 부르지 않으며,
+> Sweetbook SDK와 API Key는 이 demo의 백엔드(`server.js`) 프로세스 안에만 존재합니다.
 
----
+## 구조
 
-## 빠른 시작
+```
+ 브라우저 (index.html, app.js)
+        │
+        │  fetch('/api/...')
+        ▼
+ 이 demo 서버 (server.js, bookprintapi SDK 소유)
+        │
+        │  Sweetbook API Key (서버 env)
+        ▼
+ Sweetbook API
+```
+
+| 파일 | 역할 |
+|---|---|
+| `index.html`, `app.js`, `style.css` | 프론트엔드. SDK 미포함. `fetch('/api/...')`로만 백엔드와 통신 |
+| `server.js` | 백엔드. Node SDK(`bookprintapi`)로 Sweetbook API 호출. 좁은 REST 엔드포인트 노출 |
+| `.env` | 서버 전용 설정. API Key와 환경(sandbox/live). **브라우저에 절대 내려가지 않음** |
+
+## 실행
 
 ### 1. 설정
 
 ```bash
-cp config.example.js config.js
+cp .env.example .env
 ```
 
-`config.js`를 열고 환경별 API Key를 입력하세요:
+`.env`를 열어 값을 채우세요:
 
-```javascript
-const APP_CONFIG = {
-    environments: {
-        live: { label: '운영', url: 'https://api.sweetbook.com/v1', apiKey: '운영 API Key' },
-        sandbox: { label: '샌드박스', url: 'https://api-sandbox.sweetbook.com/v1', apiKey: '샌드박스 API Key' },
-    },
-    defaultEnv: 'sandbox',
-    useCookie: false,
-};
+```ini
+SWEETBOOK_ENV=sandbox
+SWEETBOOK_API_KEY=sk_test_xxxxx
+PORT=8090
 ```
 
-### 2. 실행
+> 하나의 프로세스는 하나의 환경만 담당합니다. sandbox와 live를 모두 쓰려면 **.env 파일을 두 개** 두고 각각 다른 포트로 띄우세요.
+
+### 2. 의존성 설치
 
 ```bash
-node server.js                    # http://localhost:8090
+npm install
 ```
 
-> Node.js만 필요합니다. npm install 없이 바로 실행됩니다.
+### 3. 실행
 
-### 3. 환경 (샌드박스 / 운영)
-
-- **샌드박스** (기본값): 테스트 환경. 테스트 충전금으로 자유롭게 주문 테스트.
-- **운영**: 실제 운영 환경. 운영 API Key가 필요합니다.
-
-> **운영 API Key는 localhost에서 사용할 수 없습니다.**
-> 운영 환경에서 주문하려면 API Key 발급 시 등록한 도메인에서 실행해야 합니다.
-
-### 4. Sandbox 테스트
-
-1. 환경을 **샌드박스**로 선택
-2. **충전금** 탭에서 테스트 충전금 충전
-3. **주문하기** 탭에서 FINALIZED 책을 선택하여 주문 테스트
-
----
-
-## 기능
-
-### 주문하기
-- FINALIZED 책 목록 조회 또는 bookUid 직접 입력
-- 여러 책 선택하여 묶음 주문 (items 배열)
-- 배송지 입력 + 외부 참조번호(externalRef)
-- 견적 조회 (VAT 10% 포함 결제금액 미리 확인)
-- 주문 생성 (충전금 즉시 차감)
-
-### 주문 내역
-- 상태별 필터 조회
-- 주문 상세 (금액, 배송지, 항목별 상태, 송장번호)
-- 주문 취소 (PAID / PDF_READY 상태)
-- 배송지 변경 (발송 전)
-
-### 충전금
-- 잔액 조회
-- 거래 내역 (충전, 결제, 취소 반환 등)
-- Sandbox 테스트 충전
-
----
-
-## 주문 흐름
-
-```
-1. 책 선택 (FINALIZED 상태)
-2. 배송지 입력
-3. 견적 조회 (선택)
-4. 주문 생성 → 충전금 차감 → 주문번호 발급
+```bash
+npm start
+# 또는
+node server.js
 ```
 
-### 주문 상태
+브라우저에서 `http://localhost:8090` 접속.
 
-```
-PAID(20) → PDF_READY(25) → CONFIRMED(30) → IN_PRODUCTION(40)
-  → PRODUCTION_COMPLETE(50) → SHIPPED(60) → DELIVERED(70)
+## 백엔드가 노출하는 REST 엔드포인트
 
-취소: PAID(20) 또는 PDF_READY(25) 상태에서만 가능 → CANCELLED(80/81)
-```
-
-| 상태 | 코드 | 설명 | 취소 가능 | 배송지 변경 |
-|------|------|------|:---------:|:----------:|
-| PAID | 20 | 결제 완료 | O | O |
-| PDF_READY | 25 | PDF 생성 완료 | O | O |
-| CONFIRMED | 30 | 주문 확정 | X | O |
-| IN_PRODUCTION | 40 | 인쇄 중 | X | X |
-| PRODUCTION_COMPLETE | 50 | 인쇄 완료 | X | X |
-| SHIPPED | 60 | 발송 완료 | X | X |
-| DELIVERED | 70 | 배송 완료 | X | X |
-| CANCELLED | 80/81 | 취소됨 | - | - |
-
----
-
-## 가격 계산
-
-```
-상품금액 = 단가 × 수량 (파트너 커스텀 가격 적용)
-합계     = 상품금액 + 배송비(3,000원)
-결제금액 = Floor(합계 × 1.1 / 10) × 10  ← VAT 10% 포함, 10원 미만 절삭
-```
-
-### 예시
-
-| 항목 | 금액 |
-|------|------|
-| 상품금액 (1권) | 8,500원 |
-| 배송비 | 3,000원 |
-| 소계 | 11,500원 |
-| VAT 10% | 1,150원 |
-| **결제금액** | **12,650원** → **12,650원** |
-
-> 정확한 금액은 `POST /orders/estimate` API로 사전 확인하세요.
-
----
-
-## API 엔드포인트 (파트너용)
-
-### 주문
+프론트가 호출하는 좁은 API입니다. 확장하려면 `server.js`의 `routes` 배열에 추가하세요.
 
 | 메서드 | 경로 | 설명 |
-|--------|------|------|
-| POST | `/orders/estimate` | 가격 견적 |
-| POST | `/orders` | 주문 생성 |
-| GET | `/orders` | 주문 목록 |
-| GET | `/orders/{orderUid}` | 주문 상세 |
-| POST | `/orders/{orderUid}/cancel` | 주문 취소 |
-| PATCH | `/orders/{orderUid}/shipping` | 배송지 변경 |
+|---|---|---|
+| GET | `/api/env` | 서버의 환경(sandbox/live)만 반환. API Key는 내려주지 않음 |
+| GET | `/api/credits/balance` | 충전금 잔액 |
+| GET | `/api/credits/transactions` | 거래 내역 |
+| POST | `/api/credits/sandbox-charge` | Sandbox 충전 (sandbox 환경 전용) |
+| GET | `/api/books?status=finalized` | 책 목록 |
+| POST | `/api/orders/estimate` | 견적 조회 |
+| POST | `/api/orders` | 주문 생성 |
+| GET | `/api/orders` | 주문 목록 |
+| GET | `/api/orders/:uid` | 주문 상세 |
+| POST | `/api/orders/:uid/cancel` | 주문 취소 |
+| PATCH | `/api/orders/:uid/shipping` | 배송지 변경 |
 
-### 충전금
+## 왜 3-tier인가
 
-| 메서드 | 경로 | 설명 |
-|--------|------|------|
-| GET | `/credits` | 충전금 잔액 |
-| GET | `/credits/transactions` | 거래 내역 |
-| POST | `/credits/sandbox/charge` | Sandbox 테스트 충전 |
+이전 버전에서는 `sweetbook-sdk-*.js`를 브라우저에서 직접 로드하여 API Key를 `config.js`에 두었습니다.
+이 구조는 **API Key가 클라이언트에 노출**되므로 실제 서비스에 그대로 쓸 수 없고,
+개발자가 demo를 보고 SDK를 프론트엔드에 번들하는 오해를 불러왔습니다.
 
-### 책 조회
+3-tier 구조로 바꾸면서:
+- SDK는 백엔드 전용 (파트너 실서비스에 그대로 이식 가능)
+- API Key는 프로세스 환경변수로만 관리
+- 프론트는 좁은 백엔드 API만 바라보므로 추후 다른 언어(Python/Java 등) 백엔드로 쉽게 교체 가능
 
-| 메서드 | 경로 | 설명 |
-|--------|------|------|
-| GET | `/Books` | 책 목록 (status=finalized) |
-| GET | `/Books/{bookUid}` | 책 상세 |
+## 이 demo가 사용하는 SDK
 
----
+- 레포: [sweet-book/bookprintapi-nodejs-sdk](https://github.com/sweet-book/bookprintapi-nodejs-sdk) (Node.js SDK, public)
+- 의존성 선언: `package.json` → `"bookprintapi": "github:sweet-book/bookprintapi-nodejs-sdk#v0.1.0"`
+- 사용 위치: `server.js` → `const { SweetbookClient } = require('bookprintapi')`
 
-## SDK 사용 예시
+> **배포 방식**: npm 레지스트리가 아니라 **GitHub 태그**에서 바로 설치됩니다.
+> 파트너는 별도 npm 계정/사내 레지스트리 없이 `npm install`만으로 SDK를 받을 수 있습니다.
 
-```javascript
-// 클라이언트 초기화
-const client = new OrderClient({
-  apiKey: 'SB_YOUR_API_KEY',
-  baseUrl: 'https://api-sandbox.sweetbook.com/v1'
-});
+### 버전 올리기
+신규 버전 태그가 찍히면 `package.json`의 `#v0.1.0` 부분을 해당 태그로 바꾸고 `npm install` 재실행.
 
-// 1. 충전금 잔액 확인
-const balance = await client.credits.getBalance();
-console.log('잔액:', balance.balance);
+### SDK를 로컬에서 수정하며 개발할 때
+demo와 SDK 레포가 같은 부모 디렉토리에 함께 clone되어 있다면:
 
-// 2. FINALIZED 책 목록
-const books = await client.books.list({ status: 'finalized' });
-const bookList = books.getList();
-
-// 3. 견적 조회
-const estimate = await client.orders.estimate({
-  items: [{ bookUid: 'BOOK_UID_HERE', quantity: 1 }]
-});
-console.log('결제금액:', estimate.paidCreditAmount);
-
-// 4. 주문 생성
-const order = await client.orders.create({
-  items: [{ bookUid: 'BOOK_UID_HERE', quantity: 1 }],
-  shipping: {
-    recipientName: '홍길동',
-    recipientPhone: '010-1234-5678',
-    postalCode: '06100',
-    address1: '서울특별시 강남구 테헤란로 123',
-    address2: '4층',
-    shippingMemo: '부재 시 경비실'
-  },
-  externalRef: 'MY-ORDER-001'
-});
-console.log('주문번호:', order.orderUid);
-
-// 5. 주문 취소
-await client.orders.cancel(order.orderUid, '테스트 주문 취소');
-
-// 6. 배송지 변경
-await client.orders.updateShipping(order.orderUid, {
-  recipientPhone: '010-9999-8888',
-  shippingMemo: '문 앞에 놓아주세요'
-});
+```bash
+# demo 디렉토리에서
+npm install ../bookprintapi-nodejs-sdk
 ```
 
----
+이 명령은 로컬 경로로 임시 오버라이드만 하고, `package.json`은 **수정하지 마세요**.
+개발 끝나면 `npm install`로 원래 git 태그 참조로 되돌아갑니다.
 
-## diaryBook 연동
+### SDK 자체를 바로 학습하려면
 
-[diaryBook](../diaryBook)에서 책 생성 → finalize 후 받은 `bookUid`를
-이 프로그램의 "bookUid 직접 입력"에 붙여넣거나 "내 책 불러오기"로 조회합니다.
+- [`bookprintapi-nodejs-sdk/README.md`](../bookprintapi-nodejs-sdk/README.md) — SDK API 개요
+- [`bookprintapi-nodejs-sdk/examples/`](../bookprintapi-nodejs-sdk/examples/) — 실행 가능한 예제
+  - `server_pipeline.js` — 책 생성 → 표지 → 내지 → 발행면 → finalize → 주문 E2E
+  - `01_create_book.js` — 책 생성 최소 흐름
+  - `02_order.js` — 충전금 → 견적 → 주문
+  - `03_webhook_server.js` — 웹훅 수신 + 서명 검증
 
-```
-diaryBook (localhost:8080)          partner-order (localhost:8090)
-책 생성 → finalize → bookUid  ───→  bookUid 입력 → 견적 → 주문
-```
-
----
-
-## 파일 구조
-
-```
-partner-order/
-├── index.html              # UI (탭: 주문하기, 주문내역, 충전금, 로그)
-├── app.js                  # 주문 로직 (UI 이벤트, 주문/충전금 처리)
-├── sweetbook-sdk-core.js   # HTTP 클라이언트 베이스 (에러 처리, 요청 파싱)
-├── sweetbook-sdk-order.js  # Orders, Credits, Books API 클라이언트
-├── server.js               # 로컬 서버 (:8090) + CORS API 프록시
-├── config.example.js       # 설정 템플릿 (API Key, 서버 URL)
-├── config.js               # 런타임 설정 (git-ignored)
-└── style.css               # 스타일
-```
-
----
-
-## 주의사항
-
-- **API Key 보안**: `config.js`는 `.gitignore`에 포함되어 있습니다. 절대 Git에 커밋하지 마세요.
-- **Sandbox 환경**: Sandbox에서 생성한 주문은 실제 인쇄/배송되지 않습니다. 테스트 충전금으로 자유롭게 테스트하세요.
-- **충전금 차감**: 주문 생성 시 충전금이 즉시 차감됩니다. 주문 취소 시 충전금이 자동 반환됩니다 (별도 환불 API 없음).
-
-> ⚠️ **프로덕션 주의**: `server.js`의 CORS 설정은 `Access-Control-Allow-Origin: *`로 모든 origin을 허용합니다.
-> 이는 로컬 개발용이며, 프로덕션 환경에서는 반드시 허용할 origin을 제한하세요.
+이 demo의 `server.js`는 위 예제들의 엔드포인트를 **좁은 REST**로 감싼 형태입니다.

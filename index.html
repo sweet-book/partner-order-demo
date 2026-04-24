@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>파트너 주문</title>
+    <title>파트너 주문 demo</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -12,7 +12,7 @@
 <div class="header">
     <div>
         <h1>파트너 주문</h1>
-        <span class="text-muted">Sweetbook Partner Order System</span>
+        <span class="text-muted">Sweetbook Partner Order Demo — 3-tier (프론트 / 백엔드(SDK) / Sweetbook API)</span>
     </div>
     <div class="header-right">
         <span id="creditBadge" class="credit-badge hidden">잔액: -</span>
@@ -20,18 +20,8 @@
     </div>
 </div>
 
-<!-- ── 설정 바 ── -->
-<div class="config-bar">
-    <div class="env-selector">
-        <label><input type="radio" name="apiEnv" value="sandbox" checked /> 샌드박스</label>
-        <label><input type="radio" name="apiEnv" value="live" /> 운영</label>
-    </div>
-    <input type="password" id="apiKeyInput" placeholder="API Key"
-        onfocus="this.type='text'" onblur="this.type='password'" />
-    <button class="btn btn-primary btn-sm" onclick="initClient()">연결</button>
-    <span id="connStatus" class="text-muted"></span>
-    <span id="envWarning" class="env-warning" style="display:none;">운영 환경입니다. 실제 충전금이 차감되고 실제 주문이 생성됩니다.</span>
-</div>
+<!-- ── 환경 배너 (서버의 env 주입) ── -->
+<div id="envBanner" class="env-banner"></div>
 
 <!-- ── 탭 ── -->
 <div class="tabs">
@@ -57,7 +47,7 @@
             </div>
         </div>
         <div id="bookList">
-            <div class="empty-state">연결 후 '내 책 불러오기'를 클릭하거나 bookUid를 직접 입력하세요.</div>
+            <div class="empty-state">'내 책 불러오기'를 클릭하거나 bookUid를 직접 입력하세요.</div>
         </div>
     </div>
 
@@ -131,7 +121,7 @@
             </div>
         </div>
         <div id="orderTableWrap">
-            <div class="empty-state">연결 후 '조회'를 클릭하세요.</div>
+            <div class="empty-state">'조회'를 클릭하세요.</div>
         </div>
         <div id="orderPagination" class="flex-end mt-8"></div>
     </div>
@@ -148,7 +138,7 @@
         </div>
         <div id="creditInfo" class="mb-12"></div>
 
-        <!-- sandbox 충전 (test 모드에서만 표시) -->
+        <!-- sandbox 충전 (sandbox env일 때만 표시) -->
         <div id="sandboxChargeSection" class="card hidden" style="background:#f0fdf4;border-color:#bbf7d0;">
             <div style="display:flex;justify-content:space-between;align-items:center;">
                 <h3>Sandbox 충전</h3>
@@ -161,7 +151,7 @@
             </div>
         </div>
 
-        <!-- live 안내 (live 모드에서만 표시) -->
+        <!-- live 안내 -->
         <div id="liveChargeNotice" class="card hidden" style="background:#fff7ed;border-color:#fed7aa;">
             <p style="margin:0;font-size:0.9rem;">BookPrintAPI 웹사이트에서 충전금을 충전해주세요.</p>
         </div>
@@ -182,7 +172,7 @@
             <button class="btn btn-outline btn-sm" onclick="clearLog()">로그 초기화</button>
         </div>
         <div id="logArea" class="log-area">
-            <div class="log-info">[시작] 파트너 주문 프로그램 준비 완료</div>
+            <div class="log-info">[시작] 파트너 주문 demo 준비 중...</div>
         </div>
     </div>
 </div>
@@ -199,18 +189,6 @@
     </div>
 </div>
 
-<script src="sweetbook-sdk-core.js"></script>
-<script src="sweetbook-sdk-order.js"></script>
-<script>
-    // config.js 로드 (없을 수 있음)
-    try {
-        const s = document.createElement('script');
-        s.src = 'config.js';
-        s.onload = () => applyConfig();
-        s.onerror = () => {};
-        document.head.appendChild(s);
-    } catch(e) {}
-</script>
 <script src="app.js"></script>
 
 </body>

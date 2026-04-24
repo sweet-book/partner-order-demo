@@ -29,6 +29,15 @@ Sweetbook API 기반 파트너 주문 demo 웹앱.
 
 ## 실행
 
+### 0. 클론
+
+```bash
+git clone https://github.com/sweet-book/partner-order-demo.git
+cd partner-order-demo
+```
+
+특정 릴리스를 받으려면: `git clone -b v0.2.0 ...` 또는 [Releases](https://github.com/sweet-book/partner-order-demo/releases)에서 tarball 다운로드.
+
 ### 1. 설정
 
 ```bash

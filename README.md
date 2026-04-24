@@ -93,14 +93,14 @@ node server.js
 ## 이 demo가 사용하는 SDK
 
 - 레포: [sweet-book/bookprintapi-nodejs-sdk](https://github.com/sweet-book/bookprintapi-nodejs-sdk) (Node.js SDK, public)
-- 의존성 선언: `package.json` → `"bookprintapi": "github:sweet-book/bookprintapi-nodejs-sdk#v0.1.0"`
+- 의존성 선언: `package.json` → `"bookprintapi": "github:sweet-book/bookprintapi-nodejs-sdk#v0.1.1"`
 - 사용 위치: `server.js` → `const { SweetbookClient } = require('bookprintapi')`
 
 > **배포 방식**: npm 레지스트리가 아니라 **GitHub 태그**에서 바로 설치됩니다.
 > 파트너는 별도 npm 계정/사내 레지스트리 없이 `npm install`만으로 SDK를 받을 수 있습니다.
 
 ### 버전 올리기
-신규 버전 태그가 찍히면 `package.json`의 `#v0.1.0` 부분을 해당 태그로 바꾸고 `npm install` 재실행.
+신규 버전 태그가 찍히면 `package.json`의 `#v0.1.1` 부분을 해당 태그로 바꾸고 `npm install` 재실행.
 
 ### SDK를 로컬에서 수정하며 개발할 때
 demo와 SDK 레포가 같은 부모 디렉토리에 함께 clone되어 있다면:

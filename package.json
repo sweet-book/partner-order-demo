@@ -9,7 +9,7 @@
     "smoke": "node scripts/smoke.js"
   },
   "dependencies": {
-    "bookprintapi": "github:sweet-book/bookprintapi-nodejs-sdk#v0.1.0",
+    "bookprintapi": "github:sweet-book/bookprintapi-nodejs-sdk#v0.1.1",
     "dotenv": "^16.4.5"
   }
 }

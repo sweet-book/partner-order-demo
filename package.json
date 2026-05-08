@@ -1,6 +1,6 @@
 {
   "name": "partner-order-demo",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "description": "Sweetbook 파트너 주문 demo — 3계층 (프론트 → 백엔드(SDK 소유) → Sweetbook API)",
   "main": "server.js",
@@ -9,7 +9,7 @@
     "smoke": "node scripts/smoke.js"
   },
   "dependencies": {
-    "bookprintapi": "github:sweet-book/bookprintapi-nodejs-sdk#v0.1.1",
+    "bookprintapi": "github:sweet-book/bookprintapi-nodejs-sdk#v0.3.0",
     "dotenv": "^16.4.5"
   }
 }
